@@ -5,270 +5,210 @@
   <title>猜词游戏</title>
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
-      text-align: center;
       margin: 0;
-      padding: 0;
-      background: linear-gradient(135deg, #1e3c72, #2a5298);
+      font-family: sans-serif;
+      text-align: center;
+      background: linear-gradient(135deg, #007cf0, #00dfd8);
       color: white;
     }
-
     h1 {
       font-size: 2.5em;
-      margin: 1em 0 0.5em;
+      margin-top: 1em;
     }
-
-    #loginScreen {
-      display: block;
-      padding: 2em;
-    }
-
-    #gameScreen {
-      display: none;
-      padding: 2em;
-    }
-
-    #nameInput {
-      padding: 0.5em;
-      font-size: 1em;
-      width: 60%;
-    }
-
     #word {
-      font-size: 2.5em;
-      margin: 1em;
+      font-size: 3em;
+      margin: 1em 0;
     }
-
-    #team, #score, #timer, #playerList {
+    #timerBar {
+      height: 20px;
+      width: 100%;
+      background: rgba(255,255,255,0.2);
+      margin: 10px 0;
+      position: relative;
+    }
+    #timerFill {
+      height: 100%;
+      background: #fff;
+      transition: width 1s linear;
+    }
+    button {
+      padding: 1em 2em;
+      margin: 0.5em;
+      font-size: 1em;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    #playerList, #score, #team, #timer {
       margin: 0.5em;
       font-size: 1.2em;
     }
-
-    button {
-      padding: 1em 2em;
-      font-size: 1em;
-      margin: 0.5em;
-      border: none;
-      border-radius: 8px;
-      background-color: white;
-      color: #2c3e50;
-      cursor: pointer;
-      transition: 0.2s;
+    #results {
+      display: none;
+      margin-top: 2em;
+      padding: 2em;
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
     }
-
-    button:hover {
-      background-color: #f0f0f0;
-    }
-
-    #word.hidden {
-      color: #ccc;
-    }
-
-    #timerBar {
-      width: 100%;
-      height: 10px;
-      background-color: rgba(255,255,255,0.2);
-      margin-top: 1em;
-      position: relative;
-    }
-
-    #timerFill {
-      height: 100%;
-      background-color: #fff;
-      width: 100%;
-      transition: width 1s linear;
-    }
-
-    #results h3 {
-      margin-top: 1em;
-      font-size: 1.5em;
-    }
-
-    #results p {
-      font-size: 1em;
-      margin: 0.5em 0;
-    }
-
-    @media (max-width: 600px) {
-      button {
-        padding: 0.8em 1.2em;
-        font-size: 0.9em;
-      }
-
-      #nameInput {
-        width: 90%;
-      }
+    #results h2 {
+      font-size: 2em;
     }
   </style>
 </head>
 <body>
-
   <h1>猜词游戏</h1>
 
-  <div id="loginScreen">
-    <input type="text" id="nameInput" placeholder="Введите имя"><br><br>
-    <label><input type="radio" name="team" value="red" checked> 🔴 Красные</label>
-    <label><input type="radio" name="team" value="blue"> 🔵 Синие</label><br><br>
-    <button id="enterBtn">Начать игру</button>
+  <div id="login">
+    <input id="nameInput" placeholder="Введите имя" />
+    <select id="teamSelect">
+      <option value="red">🔴 Красные</option>
+      <option value="blue">🔵 Синие</option>
+    </select>
+    <button onclick="submitName()">Начать</button>
   </div>
 
-  <div id="gameScreen">
+  <div id="game" style="display:none">
     <div id="team">Команда: </div>
     <div id="score">Счёт: </div>
-    <div id="playerList">Игроки: </div>
     <div id="timerBar"><div id="timerFill"></div></div>
-    <div id="timer">Таймер: </div>
-    <div id="word" class="hidden">Ожидание...</div>
-    <div id="results"></div>
-    <div id="buttons">
+    <div id="playerList">Игроки: </div>
+    <div id="word">Ожидание...</div>
+    <div>
       <button id="startBtn">开始解释</button>
       <button id="correctBtn" disabled>Угадали</button>
       <button id="skipBtn" disabled>Пропустить</button>
-      <button id="restartBtn">🔁 Начать заново</button>
+      <button id="restartBtn">🔁 Заново</button>
     </div>
   </div>
 
+  <div id="results"></div>
+
+  <audio id="sound-correct" src="sounds/correct.mp3"></audio>
+  <audio id="sound-fail" src="sounds/fail.mp3"></audio>
+  <audio id="sound-win" src="sounds/win.mp3"></audio>
+
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <script>
-    let socket;
+    const socket = io();
     let myTeam = "";
     let isExplainer = false;
-    let timer = null;
+    let timerInterval = null;
     let timeLeft = 60;
-    let timerStarted = false;
 
-    const loginScreen = document.getElementById("loginScreen");
-    const gameScreen = document.getElementById("gameScreen");
     const nameInput = document.getElementById("nameInput");
-    const enterBtn = document.getElementById("enterBtn");
-
+    const teamSelect = document.getElementById("teamSelect");
+    const login = document.getElementById("login");
+    const game = document.getElementById("game");
     const teamDiv = document.getElementById("team");
     const scoreDiv = document.getElementById("score");
-    const timerDiv = document.getElementById("timer");
-    const timerFill = document.getElementById("timerFill");
     const wordDiv = document.getElementById("word");
+    const playerListDiv = document.getElementById("playerList");
     const startBtn = document.getElementById("startBtn");
     const correctBtn = document.getElementById("correctBtn");
     const skipBtn = document.getElementById("skipBtn");
     const restartBtn = document.getElementById("restartBtn");
-    const playerListDiv = document.getElementById("playerList");
     const resultsDiv = document.getElementById("results");
+    const timerFill = document.getElementById("timerFill");
 
-    enterBtn.onclick = () => {
+    const soundCorrect = document.getElementById("sound-correct");
+    const soundFail = document.getElementById("sound-fail");
+    const soundWin = document.getElementById("sound-win");
+
+    function submitName() {
       const name = nameInput.value.trim();
-      const team = document.querySelector('input[name="team"]:checked').value;
-      if (!name) {
-        alert("Введите имя!");
-        return;
-      }
-
-      socket = io();
+      const team = teamSelect.value;
+      if (!name) return alert("Введите имя");
       socket.emit("setName", name);
       socket.emit("setTeam", team);
       myTeam = team;
-
-      loginScreen.style.display = "none";
-      gameScreen.style.display = "block";
-
-      setupSocketEvents();
-    };
-
-    function setupSocketEvents() {
-      socket.on("scoreUpdate", scores => {
-        scoreDiv.textContent = `Счёт: 🔴 ${scores.red} | 🔵 ${scores.blue}`;
-      });
-
-      socket.on("playersUpdate", players => {
-        const list = Object.values(players)
-          .map(p => `${p.name || "?"} (${p.team === "red" ? "🔴" : "🔵"})`)
-          .join("<br>");
-        playerListDiv.innerHTML = list;
-      });
-
-      socket.on("turnStarted", ({ team }) => {
-        if (myTeam !== team || !isExplainer) {
-          wordDiv.textContent = "Команда " + (team === "red" ? "🔴" : "🔵") + " объясняет...";
-          wordDiv.classList.add("hidden");
-          correctBtn.disabled = true;
-          skipBtn.disabled = true;
-        }
-        if (isExplainer && !timerStarted) {
-          startTimer();
-          timerStarted = true;
-        }
-      });
-
-      socket.on("showWord", word => {
-        wordDiv.textContent = word;
-        wordDiv.classList.remove("hidden");
-        correctBtn.disabled = false;
-        skipBtn.disabled = false;
-      });
-
-      socket.on("turnEnded", nextTeam => {
-        isExplainer = false;
-        timerStarted = false;
-        wordDiv.textContent = "Ход команды " + (nextTeam === "red" ? "🔴" : "🔵");
-        wordDiv.classList.add("hidden");
-        correctBtn.disabled = true;
-        skipBtn.disabled = true;
-        clearInterval(timer);
-        timerFill.style.width = "100%";
-        timerDiv.textContent = "Таймер: 60";
-      });
-
-      socket.on("gameOver", data => {
-        const { scores, winner, results } = data;
-        let winText = winner === "draw" ? "Ничья!" :
-          `🏆 Победила команда ${winner === "red" ? "🔴" : "🔵"}!`;
-
-        wordDiv.textContent = "Игра окончена!";
-        scoreDiv.textContent = `Итог: 🔴 ${scores.red} | 🔵 ${scores.blue}`;
-        resultsDiv.innerHTML = `<h3>${winText}</h3>` + results.map(r =>
-          `<p><b>${r.name}</b> (${r.team === "red" ? "🔴" : "🔵"})<br>
-           Угадано: ${r.guessed}<br>
-           Пропущенные: ${r.skipped.join(", ") || "-"}</p>`
-        ).join("");
-      });
-
-      startBtn.onclick = () => {
-        isExplainer = true;
-        socket.emit("startTurn");
-      };
-
-      correctBtn.onclick = () => {
-        socket.emit("guessed", false);
-      };
-
-      skipBtn.onclick = () => {
-        socket.emit("guessed", true);
-      };
-
-      restartBtn.onclick = () => {
-        socket.emit("restartGame");
-        resultsDiv.innerHTML = "";
-        timerFill.style.width = "100%";
-      };
+      teamDiv.textContent = "Команда: " + (team === "red" ? "🔴" : "🔵");
+      login.style.display = "none";
+      game.style.display = "block";
     }
 
-    function startTimer() {
-      timeLeft = 60;
-      clearInterval(timer);
-      timerFill.style.transition = "none";
-      timerFill.style.width = "100%";
-      setTimeout(() => {
-        timerFill.style.transition = "width 60s linear";
-        timerFill.style.width = "0%";
-      }, 50);
+    socket.on("playersUpdate", (players) => {
+      playerListDiv.innerHTML = Object.values(players)
+        .map(p => `${p.name} (${p.team === "red" ? "🔴" : "🔵"})`)
+        .join("<br>");
+    });
 
-      timer = setInterval(() => {
+    socket.on("scoreUpdate", (scores) => {
+      scoreDiv.textContent = `Счёт: 🔴 ${scores.red} | 🔵 ${scores.blue}`;
+    });
+
+    socket.on("turnStarted", ({ team }) => {
+      correctBtn.disabled = !isExplainer;
+      skipBtn.disabled = !isExplainer;
+      wordDiv.textContent = isExplainer ? "" : "Ход команды " + (team === "red" ? "🔴" : "🔵");
+      startTimer();
+    });
+
+    socket.on("showWord", (word) => {
+      wordDiv.textContent = word;
+    });
+
+    socket.on("turnEnded", (team) => {
+      stopTimer();
+      wordDiv.textContent = "Ход команды " + (team === "red" ? "🔴" : "🔵");
+      correctBtn.disabled = true;
+      skipBtn.disabled = true;
+      isExplainer = false;
+    });
+
+    socket.on("gameOver", ({ scores, winner, results }) => {
+      stopTimer();
+      wordDiv.textContent = "Игра окончена!";
+      confetti({ spread: 180, particleCount: 200 });
+      soundWin.play();
+      let html = `<h2>🎉 Победила команда ${winner === "draw" ? "Ничья" : (winner === "red" ? "🔴" : "🔵")}!</h2>`;
+      html += `<p>Счёт: 🔴 ${scores.red} | 🔵 ${scores.blue}</p><hr>`;
+      results.forEach(p => {
+        html += `<p><strong>${p.name}</strong> (${p.team === "red" ? "🔴" : "🔵"}) — Угадано: ${p.guessed}, Пропущено: ${p.skipped.join(", ")}</p>`;
+      });
+      resultsDiv.innerHTML = html;
+      resultsDiv.style.display = "block";
+    });
+
+    startBtn.onclick = () => {
+      isExplainer = true;
+      socket.emit("startTurn");
+    };
+    correctBtn.onclick = () => {
+      socket.emit("guessed", false);
+      soundCorrect.play();
+    };
+    skipBtn.onclick = () => {
+      socket.emit("guessed", true);
+      soundFail.play();
+    };
+    restartBtn.onclick = () => {
+      socket.emit("restartGame");
+      resultsDiv.style.display = "none";
+    };
+
+    function startTimer() {
+      stopTimer();
+      timeLeft = 60;
+      updateTimerBar();
+      timerInterval = setInterval(() => {
         timeLeft--;
-        timerDiv.textContent = "Таймер: " + timeLeft;
+        updateTimerBar();
         if (timeLeft <= 0) {
-          clearInterval(timer);
+          clearInterval(timerInterval);
           socket.emit("endTurn");
         }
       }, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+      timeLeft = 0;
+      updateTimerBar();
+    }
+
+    function updateTimerBar() {
+      timerFill.style.width = `${(timeLeft / 60) * 100}%`;
     }
   </script>
 </body>
