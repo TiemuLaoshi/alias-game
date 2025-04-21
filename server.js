@@ -1,6 +1,8 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(express.static("public"));
@@ -13,22 +15,23 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 
-let players = {}; // socket.id -> { name, team, guessedWords, skippedWords }
-let words = [
-  "周末", "打算", "跟", "作业", "复习", "南方", "北方", "面包", "地图", "搬",
-  "腿", "疼", "脚", "树", "容易", "难", "秘书", "经理", "办公室", "辆",
-  "楼", "把", "伞", "胖", "瘦", "还是", "条", "裤子", "记得", "衬衫",
-  "元", "甜", "饮料", "或者", "花", "绿", "比赛", "聪明", "努力", "饿",
-  "超市", "蛋糕", "年轻", "客人", "发烧", "照顾", "季节", "春天", "草",
-  "夏天", "裙子", "最近", "张"
-];
+let players = {};
+let words = [];
 let usedWords = [];
 let scores = { red: 0, blue: 0 };
 let currentTeam = 'red';
 let explainer = null;
 
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+
 io.on('connection', (socket) => {
   console.log('🟢 Подключился:', socket.id);
+
   players[socket.id] = {
     team: null,
     name: "?",
@@ -44,14 +47,38 @@ io.on('connection', (socket) => {
     }
   });
 
-  io.emit('playersUpdate', players);
-  io.emit('scoreUpdate', scores);
-
   socket.on("setName", (name) => {
     if (players[socket.id]) {
       players[socket.id].name = name;
       io.emit("playersUpdate", players);
     }
+  });
+
+  socket.on("loadLessons", (selectedLessons) => {
+    words = [];
+    usedWords = [];
+    scores = { red: 0, blue: 0 };
+    explainer = null;
+    currentTeam = "red";
+
+    for (let id in players) {
+      players[id].isExplainer = false;
+      players[id].guessedWords = [];
+      players[id].skippedWords = [];
+    }
+
+    selectedLessons.forEach(filename => {
+      const fullPath = path.join(__dirname, "public", "words", filename);
+      if (fs.existsSync(fullPath)) {
+        const lessonWords = JSON.parse(fs.readFileSync(fullPath, "utf-8"));
+        words = words.concat(lessonWords);
+      }
+    });
+
+    shuffle(words);
+    io.emit('scoreUpdate', scores);
+    io.emit('playersUpdate', players);
+    io.emit('turnEnded', currentTeam);
   });
 
   socket.on('startTurn', () => {
@@ -65,6 +92,8 @@ io.on('connection', (socket) => {
 
     socket.emit('showWord', word);
     io.emit('turnStarted', { team: currentTeam });
+io.emit('wordsLeft', words.length - usedWords.length);
+
   });
 
   socket.on('guessed', (isSkip) => {
@@ -81,7 +110,6 @@ io.on('connection', (socket) => {
 
     io.emit('scoreUpdate', scores);
 
-    // ✅ Условия окончания игры:
     if (scores[currentTeam] > words.length / 2 || usedWords.length >= words.length) {
       return endGame();
     }
@@ -90,6 +118,9 @@ io.on('connection', (socket) => {
     if (!nextWord) return endGame();
     usedWords.push(nextWord);
     socket.emit('showWord', nextWord);
+io.emit('wordsLeft', words.length - usedWords.length);
+
+
   });
 
   socket.on('endTurn', () => {
@@ -101,10 +132,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('restartGame', () => {
+    words = [];
     usedWords = [];
     scores = { red: 0, blue: 0 };
     explainer = null;
-    currentTeam = 'red';
+    currentTeam = "red";
     for (let id in players) {
       players[id].isExplainer = false;
       players[id].guessedWords = [];
@@ -112,7 +144,6 @@ io.on('connection', (socket) => {
     }
     io.emit('scoreUpdate', scores);
     io.emit('playersUpdate', players);
-    io.emit('turnEnded', currentTeam);
   });
 
   socket.on('disconnect', () => {

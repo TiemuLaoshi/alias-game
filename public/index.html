@@ -53,6 +53,13 @@
     #results h2 {
       font-size: 2em;
     }
+    #lessonSelect {
+      margin: 1em 0;
+    }
+    #lessonSelect label {
+      display: inline-block;
+      margin: 0.3em 1em;
+    }
   </style>
 </head>
 <body>
@@ -64,12 +71,18 @@
       <option value="red">🔴 Красные</option>
       <option value="blue">🔵 Синие</option>
     </select>
-    <button onclick="submitName()">Начать</button>
+    <button onclick="submitName()">Далее</button>
   </div>
 
+  <div id="lessonSelect" style="display:none">
+    <h3>Выбери уроки:</h3>
+    <div id="lessonCheckboxes"></div>
+    <button onclick="submitLessons()">Начать игру</button>
+  </div>
   <div id="game" style="display:none">
     <div id="team">Команда: </div>
     <div id="score">Счёт: </div>
+<div id="wordsLeft">Осталось слов: 0</div>
     <div id="timerBar"><div id="timerFill"></div></div>
     <div id="playerList">Игроки: </div>
     <div id="word">Ожидание...</div>
@@ -99,7 +112,10 @@
     const nameInput = document.getElementById("nameInput");
     const teamSelect = document.getElementById("teamSelect");
     const login = document.getElementById("login");
+    const lessonSelect = document.getElementById("lessonSelect");
+    const lessonCheckboxes = document.getElementById("lessonCheckboxes");
     const game = document.getElementById("game");
+
     const teamDiv = document.getElementById("team");
     const scoreDiv = document.getElementById("score");
     const wordDiv = document.getElementById("word");
@@ -124,6 +140,35 @@
       myTeam = team;
       teamDiv.textContent = "Команда: " + (team === "red" ? "🔴" : "🔵");
       login.style.display = "none";
+
+      if (team === "red") {
+        lessonSelect.style.display = "block";
+        for (let i = 1; i <= 9; i++) {
+          const label = document.createElement("label");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.value = `lesson${i}.json`;
+          label.appendChild(checkbox);
+          label.appendChild(document.createTextNode(` Урок ${i}`));
+          lessonCheckboxes.appendChild(label);
+        }
+      } else {
+        game.style.display = "block";
+      }
+    }
+
+    function submitLessons() {
+      const selected = Array.from(
+        lessonCheckboxes.querySelectorAll("input:checked")
+      ).map(cb => cb.value);
+
+      if (selected.length === 0) {
+        alert("Выбери хотя бы один урок");
+        return;
+      }
+
+      socket.emit("loadLessons", selected);
+      lessonSelect.style.display = "none";
       game.style.display = "block";
     }
 
@@ -132,6 +177,9 @@
         .map(p => `${p.name} (${p.team === "red" ? "🔴" : "🔵"})`)
         .join("<br>");
     });
+socket.on("wordsLeft", (left) => {
+  document.getElementById("wordsLeft").textContent = "Осталось слов: " + left;
+});
 
     socket.on("scoreUpdate", (scores) => {
       scoreDiv.textContent = `Счёт: 🔴 ${scores.red} | 🔵 ${scores.blue}`;
@@ -140,9 +188,7 @@
     socket.on("turnStarted", ({ team }) => {
       correctBtn.disabled = !isExplainer;
       skipBtn.disabled = !isExplainer;
-if (!isExplainer) {
-  wordDiv.textContent = "Ход команды " + (team === "red" ? "🔴" : "🔵");
-}
+      wordDiv.textContent = isExplainer ? "" : "Ход команды " + (team === "red" ? "🔴" : "🔵");
       startTimer();
     });
 
@@ -186,7 +232,7 @@ if (!isExplainer) {
     };
     restartBtn.onclick = () => {
       socket.emit("restartGame");
-      resultsDiv.style.display = "none";
+      location.reload();
     };
 
     function startTimer() {
