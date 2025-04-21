@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>猜词游戏</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 2em; background-color: #f4f4f4; transition: background-color 0.5s; }
+    h1 { font-size: 2em; margin-bottom: 1em; }
+    #word { font-size: 2.5em; margin: 1em; }
+    #team, #score, #timer, #playerList { margin: 0.5em; font-size: 1.2em; }
+    button { padding: 1em 2em; font-size: 1em; margin: 0.5em; }
+    #word.hidden { color: #999; }
+    #results { margin-top: 2em; padding: 1em; border-top: 2px solid #ccc; text-align: left; max-width: 600px; margin-left: auto; margin-right: auto; display: none; background: #fff; border-radius: 8px; }
+    .winner { font-size: 1.5em; margin-bottom: 1em; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>猜词游戏</h1>
+  <div id="team">Команда: </div>
+  <div id="score">Счёт: </div>
+  <div id="timer">Таймер: </div>
+  <div id="playerList">Игроки: </div>
+  <div id="word" class="hidden">Ожидание...</div>
+  <div id="buttons">
+    <button id="startBtn">开始解释</button>
+    <button id="correctBtn" disabled>Угадали</button>
+    <button id="skipBtn" disabled>Пропустить</button>
+    <button id="restartBtn">🔁 Начать заново</button>
+  </div>
+  <div id="results"></div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io("http://localhost:3000");
+    const playerName = prompt("Введите своё имя:") || "Игрок";
+    socket.emit("setName", playerName);
+
+    let myTeam = "";
+    let isExplainer = false;
+    let timer = null;
+    let timeLeft = 60;
+    let timerStarted = false;
+
+    const teamDiv = document.getElementById("team");
+    const scoreDiv = document.getElementById("score");
+    const timerDiv = document.getElementById("timer");
+    const wordDiv = document.getElementById("word");
+    const startBtn = document.getElementById("startBtn");
+    const correctBtn = document.getElementById("correctBtn");
+    const skipBtn = document.getElementById("skipBtn");
+    const restartBtn = document.getElementById("restartBtn");
+    const playerListDiv = document.getElementById("playerList");
+    const resultsDiv = document.getElementById("results");
+
+    socket.on("assignedTeam", team => {
+      myTeam = team;
+      teamDiv.textContent = "Команда: " + (team === "red" ? "🔴" : "🔵");
+    });
+
+    socket.on("scoreUpdate", scores => {
+      scoreDiv.textContent = `Счёт: 🔴 ${scores.red} | 🔵 ${scores.blue}`;
+    });
+
+    socket.on("playersUpdate", players => {
+      const list = Object.values(players)
+        .map(p => `${p.name || "?"} (${p.team === "red" ? "🔴" : "🔵"})`)
+        .join("<br>");
+      playerListDiv.innerHTML = list;
+    });
+
+    socket.on("turnStarted", ({ team }) => {
+      if (myTeam !== team || !isExplainer) {
+        wordDiv.textContent = "Команда " + (team === "red" ? "🔴" : "🔵") + " объясняет...";
+        wordDiv.classList.add("hidden");
+        correctBtn.disabled = true;
+        skipBtn.disabled = true;
+      }
+
+      if (!timerStarted && isExplainer) {
+        startTimer();
+        timerStarted = true;
+      }
+    });
+
+    socket.on("showWord", word => {
+      wordDiv.textContent = word;
+      wordDiv.classList.remove("hidden");
+      correctBtn.disabled = false;
+      skipBtn.disabled = false;
+    });
+
+    socket.on("turnEnded", nextTeam => {
+      isExplainer = false;
+      timerStarted = false;
+      wordDiv.textContent = "Ход команды " + (nextTeam === "red" ? "🔴" : "🔵");
+      wordDiv.classList.add("hidden");
+      correctBtn.disabled = true;
+      skipBtn.disabled = true;
+      clearInterval(timer);
+      timerDiv.textContent = "Таймер: 60";
+    });
+
+    socket.on("gameOver", data => {
+      const { scores, winner, results } = data;
+      document.body.style.backgroundColor = winner === "red" ? "#ffe6e6" : (winner === "blue" ? "#e6f0ff" : "#fffbe6");
+      let winnerText = winner === "draw" ? "🤝 Ничья!" : `🎉 Победила команда ${winner === "red" ? "🔴" : "🔵"}!`;
+      let html = `<div class='winner'>${winnerText}</div>`;
+      html += `<p>Итоговый счёт: 🔴 ${scores.red} | 🔵 ${scores.blue}</p>`;
+      html += `<h3>Результаты игроков:</h3><ul>`;
+      for (let player of results) {
+        html += `<li><strong>${player.name}</strong> (${player.team === "red" ? "🔴" : "🔵"}):<br>
+          Угадал(а): ${player.guessed} слов<br>
+          Пропущено: ${player.skipped.length > 0 ? player.skipped.join(", ") : "-"}
+        </li><br>`;
+      }
+      html += `</ul>`;
+      resultsDiv.innerHTML = html;
+      resultsDiv.style.display = "block";
+    });
+
+    startBtn.onclick = () => {
+      isExplainer = true;
+      socket.emit("startTurn");
+    };
+
+    correctBtn.onclick = () => {
+      socket.emit("guessed", false);
+    };
+
+    skipBtn.onclick = () => {
+      socket.emit("guessed", true);
+    };
+
+    restartBtn.onclick = () => {
+      socket.emit("restartGame");
+      document.body.style.backgroundColor = "#f4f4f4";
+      resultsDiv.style.display = "none";
+    };
+
+    function startTimer() {
+      timeLeft = 60;
+      clearInterval(timer);
+      timer = setInterval(() => {
+        timeLeft--;
+        timerDiv.textContent = "Таймер: " + timeLeft;
+        if (timeLeft <= 0) {
+          clearInterval(timer);
+          timerStarted = false;
+          socket.emit("endTurn");
+        }
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
