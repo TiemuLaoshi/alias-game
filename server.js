@@ -29,19 +29,23 @@ let explainer = null;
 
 io.on('connection', (socket) => {
   console.log('🟢 Подключился:', socket.id);
+players[socket.id] = {
+  team: null,
+  name: "?",
+  guessedWords: [],
+  skippedWords: [],
+  isExplainer: false
+};
 
-  const team = Object.values(players).filter(p => p.team === 'red').length <=
-               Object.values(players).filter(p => p.team === 'blue').length ? 'red' : 'blue';
+socket.on("setTeam", (team) => {
+  if (players[socket.id]) {
+    players[socket.id].team = team;
+    io.emit("playersUpdate", players);
+  }
+});
 
-  players[socket.id] = {
-    team,
-    name: "?",
-    guessedWords: [],
-    skippedWords: [],
-    isExplainer: false
-  };
+  
 
-  socket.emit('assignedTeam', team);
   io.emit('playersUpdate', players);
   io.emit('scoreUpdate', scores);
 
