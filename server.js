@@ -29,22 +29,20 @@ let explainer = null;
 
 io.on('connection', (socket) => {
   console.log('🟢 Подключился:', socket.id);
-players[socket.id] = {
-  team: null,
-  name: "?",
-  guessedWords: [],
-  skippedWords: [],
-  isExplainer: false
-};
+  players[socket.id] = {
+    team: null,
+    name: "?",
+    guessedWords: [],
+    skippedWords: [],
+    isExplainer: false
+  };
 
-socket.on("setTeam", (team) => {
-  if (players[socket.id]) {
-    players[socket.id].team = team;
-    io.emit("playersUpdate", players);
-  }
-});
-
-  
+  socket.on("setTeam", (team) => {
+    if (players[socket.id]) {
+      players[socket.id].team = team;
+      io.emit("playersUpdate", players);
+    }
+  });
 
   io.emit('playersUpdate', players);
   io.emit('scoreUpdate', scores);
@@ -82,6 +80,11 @@ socket.on("setTeam", (team) => {
     }
 
     io.emit('scoreUpdate', scores);
+
+    // ✅ Условия окончания игры:
+    if (scores[currentTeam] > words.length / 2 || usedWords.length >= words.length) {
+      return endGame();
+    }
 
     const nextWord = words.find(w => !usedWords.includes(w));
     if (!nextWord) return endGame();
