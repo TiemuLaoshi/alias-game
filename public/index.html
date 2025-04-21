@@ -140,7 +140,9 @@
     socket.on("turnStarted", ({ team }) => {
       correctBtn.disabled = !isExplainer;
       skipBtn.disabled = !isExplainer;
-      wordDiv.textContent = isExplainer ? "" : "Ход команды " + (team === "red" ? "🔴" : "🔵");
+if (!isExplainer) {
+  wordDiv.textContent = "Ход команды " + (team === "red" ? "🔴" : "🔵");
+}
       startTimer();
     });
 
